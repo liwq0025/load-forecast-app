@@ -261,7 +261,7 @@ def main():
                         label='Historical data', linewidth=2, color='#1E88E5')
             ax_pred.plot(future_times, pred_original, 
                         label='Predicted data', linewidth=2.5, color='#FF6F00', marker='o', markersize=5)
-            ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, label='当前时刻（预测起点）')
+            ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, label='The current moment (prediction starting point)')
             ax_pred.legend(fontsize=12)
             ax_pred.set_title("Energy consumption trend forecast (next hour)", fontsize=16)
             ax_pred.grid(True, alpha=0.3)
