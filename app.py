@@ -12,37 +12,21 @@ import urllib.request   # 新增，用于下载字体
 warnings.filterwarnings('ignore')
 # -------------------- 中文字体配置（解决云服务器中文乱码） --------------------
 @st.cache_resource
+@st.cache_resource
 def setup_chinese_font():
-    """自动下载并注册中文字体"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    font_dir = os.path.join(script_dir, 'fonts')
-    os.makedirs(font_dir, exist_ok=True)
-    
-    font_path = os.path.join(font_dir, 'NotoSansSC-Regular.otf')
-    
-    if not os.path.exists(font_path):
-        try:
-            with st.spinner("⏳ 正在下载中文字体（约10MB），请稍候..."):
-                # 使用更稳定的 Google Fonts CDN（直接下载 OTF）
-                url = "https://fonts.gstatic.com/s/notosanssc/v26/k3kCo84MPvpLmixcA63oeAL7Iqp5izJFcFQ.otf"
-                urllib.request.urlretrieve(url, font_path)
-        except Exception as e:
-            st.warning(f"⚠️ 字体自动下载失败（{e}），将尝试使用系统默认字体。")
-            return False
+    font_path = os.path.join(script_dir, 'custom_font.ttf')   # 你上传的字体文件名
     
     if os.path.exists(font_path):
         fm.fontManager.addfont(font_path)
-        plt.rcParams['font.sans-serif'] = ['NotoSansSC', 'SimHei', 'Microsoft YaHei']
+        plt.rcParams['font.sans-serif'] = [fm.FontProperties(fname=font_path).get_name(), 'SimHei']
         plt.rcParams['axes.unicode_minus'] = False
         return True
     else:
-        # 如果下载失败，尝试加载系统自带的中文字体（如果有）
-        try:
-            plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
-            plt.rcParams['axes.unicode_minus'] = False
-            return True
-        except:
-            return False
+        # 如果找不到，尝试使用系统默认（可能无效，但不会报错）
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
+        plt.rcParams['axes.unicode_minus'] = False
+        return False
     
 # -------------------- 页面配置 --------------------
 st.set_page_config(page_title="智能用能负荷预测系统", layout="wide", initial_sidebar_state="collapsed")
