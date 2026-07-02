@@ -4,11 +4,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from sklearn.preprocessing import StandardScaler
 import io
 import warnings
 import os
 import urllib.request   # 新增，用于下载字体
+
 warnings.filterwarnings('ignore')
 # -------------------- 中文字体配置（解决云服务器中文乱码） --------------------
 @st.cache_resource
@@ -175,10 +177,25 @@ def main():
         col_b.metric("起始时间", df['datetime'].min().strftime('%Y-%m-%d %H:%M'))
         col_c.metric("结束时间", df['datetime'].max().strftime('%Y-%m-%d %H:%M'))
         
+        # fig_hist, ax_hist = plt.subplots(figsize=(12, 3))
+        # ax_hist.plot(df['datetime'], df['load'], linewidth=0.8, color='#1E88E5')
+        # ax_hist.set_title("Historical data curve")
+        # ax_hist.grid(True, alpha=0.3)
+        # st.pyplot(fig_hist)
+        
         fig_hist, ax_hist = plt.subplots(figsize=(12, 3))
         ax_hist.plot(df['datetime'], df['load'], linewidth=0.8, color='#1E88E5')
         ax_hist.set_title("历史负荷曲线")
         ax_hist.grid(True, alpha=0.3)
+        
+        # ----- 新增：横坐标刻度设为每小时一个标签 -----
+        ax_hist.xaxis.set_major_locator(mdates.HourLocator(interval=1))   # 每小时一个主刻度
+        ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))  # 格式：月-日 时:分
+        # 如果数据跨度较短（比如只有几天），还可以显示更密集的次刻度：
+        # ax_hist.xaxis.set_minor_locator(mdates.MinuteLocator(interval=15))  # 每15分钟一个次刻度
+        # 防止标签重叠，旋转45度
+        plt.setp(ax_hist.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        
         st.pyplot(fig_hist)
         
         # 预测按钮
@@ -241,18 +258,18 @@ def main():
             show_hist = min(240, len(df))
             plot_hist_df = df.iloc[-show_hist:]
             ax_pred.plot(plot_hist_df['datetime'], plot_hist_df['load'], 
-                        label='历史负荷', linewidth=2, color='#1E88E5')
+                        label='Historical data', linewidth=2, color='#1E88E5')
             ax_pred.plot(future_times, pred_original, 
-                        label='预测负荷 (AI生成)', linewidth=2.5, color='#FF6F00', marker='o', markersize=5)
+                        label='Predicted data', linewidth=2.5, color='#FF6F00', marker='o', markersize=5)
             ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, label='当前时刻（预测起点）')
             ax_pred.legend(fontsize=12)
-            ax_pred.set_title("用能趋势预测（未来一小时）", fontsize=16)
+            ax_pred.set_title("Energy consumption trend forecast (next hour)", fontsize=16)
             ax_pred.grid(True, alpha=0.3)
             st.pyplot(fig_pred)
             
             # 详细表格与下载
             with st.expander("📋 查看详细预测数据表格"):
-                result_df = pd.DataFrame({'预测时间点': future_times, '预测负荷值': pred_original})
+                result_df = pd.DataFrame({'time': future_times, 'load': pred_original})
                 st.dataframe(result_df, use_container_width=True)
                 csv_buffer = io.StringIO()
                 result_df.to_csv(csv_buffer, index=False)
