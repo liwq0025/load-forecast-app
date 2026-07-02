@@ -121,8 +121,8 @@ def main():
     with st.expander("⚙️ 高级参数设置（非必要请勿修改）"):
         col1, col2 = st.columns(2)
         with col1:
-            manual_input = st.number_input("历史回看步长（分钟数）", min_value=60, value=0, step=60, help="设为0则系统自动计算")
-            manual_output = st.number_input("预测未来步长（分钟数）", min_value=10, value=0, step=10, help="设为0则系统自动计算")
+            manual_input = st.number_input("历史回看步长（分钟数）", min_value=0, value=0, step=60, help="设为0则系统自动计算")
+            manual_output = st.number_input("预测未来步长（分钟数）", min_value=0, value=0, step=10, help="设为0则系统自动计算")
         with col2:
             epochs = st.number_input("训练迭代轮数", min_value=5, max_value=100, value=25, step=5)
             lr = st.number_input("学习率", min_value=0.0001, max_value=0.01, value=0.001, format="%.4f")
