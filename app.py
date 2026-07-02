@@ -207,13 +207,26 @@ def main():
             scaler = StandardScaler()
             load_scaled = scaler.fit_transform(df['load'].values.reshape(-1, 1)).flatten()
             
-            # 取最后 INPUT_STEPS 个点作为输入
-            last_seq = load_scaled[-INPUT_STEPS:]
-            input_tensor = torch.FloatTensor(last_seq).unsqueeze(0).unsqueeze(0).to(device)  # shape (1,1,720)
+            # # 取最后 INPUT_STEPS 个点作为输入
+            # last_seq = load_scaled[-INPUT_STEPS:]
+            # input_tensor = torch.FloatTensor(last_seq).unsqueeze(0).unsqueeze(0).to(device)  # shape (1,1,720)
             
-            # 预测
-            with torch.no_grad():
-                pred_scaled = model(input_tensor).cpu().numpy().flatten()  # shape (60,)
+            # # 预测
+            # with torch.no_grad():
+            #     pred_scaled = model(input_tensor).cpu().numpy().flatten()  # shape (60,)
+
+            # 自回归滚动预测：逐点预测，每次用最新的720点输入，只取输出的第一个点
+            seq = load_scaled[-INPUT_STEPS:].copy()   # 初始序列，长度为720
+            pred_scaled_list = []
+            for _ in range(OUTPUT_STEPS):
+                input_tensor = torch.FloatTensor(seq).unsqueeze(0).unsqueeze(0).to(device)  # (1,1,720)
+                with torch.no_grad():
+                    # 模型输出60步，但我们只取第一步（即下一分钟的预测）
+                    step_pred = model(input_tensor).cpu().numpy().flatten()[0]
+                pred_scaled_list.append(step_pred)
+                # 滑动窗口：丢弃最旧的一个点，加入新预测值
+                seq = np.append(seq[1:], step_pred)
+            pred_scaled = np.array(pred_scaled_list)   # shape (60,)
             
             # 反标准化
             pred_original = scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()
