@@ -130,54 +130,43 @@ def load_model(device='cpu'):
         return None, None
 
 # -------------------- 数据补全函数 --------------------
-def fill_missing_minutes(df, time_col='datetime', value_col='load'):
+def fill_missing_minutes(df, time_col, value_col):
     """
-    将时间序列补全为连续的分钟级数据，缺失值使用线性插值（前后两点插值）
-    
-    Args:
-        df (pd.DataFrame): 原始数据，需包含时间列和负荷列
-        time_col (str): 时间列名称，默认为 'datetime'
-        value_col (str): 负荷列名称，默认为 'load'
-    
-    Returns:
-        pd.DataFrame: 补全后的数据（时间连续，每分钟一条）
+    将时间序列补全为连续的分钟级数据，缺失值使用线性插值
     """
-    # 1. 确保时间列是 datetime 类型
-    df[time_col] = pd.to_datetime(df[time_col])
-    
-    # 2. 如果有重复时间，保留第一条记录（防止重采样报错）
-    df = df.drop_duplicates(subset=[time_col], keep='first')
-    
-    # 3. 按时间排序（确保顺序正确）
-    df = df.sort_values(by=time_col)
-    
-    # 4. 将时间列设置为索引
-    df = df.set_index(time_col)
-    
-    # 5. 按分钟重采样（缺失分钟自动填充为 NaN）
-    df_resampled = df.asfreq('1T')  # '1T' 表示 1 分钟
-    
-    # 6. 对负荷列进行线性插值（使用前后两个点）
-    #    method='linear' 即用前后两个有效值的斜率计算中间缺失值
-    #    limit_direction='both' 确保开头和结尾的缺失也能被填充（用最近的边界值）
-    df_resampled[value_col] = df_resampled[value_col].interpolate(
-        method='linear', 
-        limit_direction='both'
-    )
-    
-    # 7. 重置索引，将时间恢复为列
-    df_resampled = df_resampled.reset_index()
-    
-    # 8. 重命名回原来的列名
-    df_resampled.rename(columns={'index': time_col}, inplace=True)
-    
-    # 9. 统计补全情况（方便调试）
-    original_count = len(df)
-    filled_count = len(df_resampled)
-    missing_count = filled_count - original_count
-    print(f"✅ 数据补全完成: 原始 {original_count} 条 → 补全后 {filled_count} 条 (插值填充了 {missing_count} 个缺失分钟)")
-    
-    return df_resampled
+    try:
+        # 1. 复制数据，避免修改原数据
+        df_filled = df.copy()
+        
+        # 2. 确保时间列是 datetime 类型
+        df_filled[time_col] = pd.to_datetime(df_filled[time_col])
+        
+        # 3. 删除重复时间（保留第一条）
+        df_filled = df_filled.drop_duplicates(subset=[time_col], keep='first')
+        
+        # 4. 按时间排序
+        df_filled = df_filled.sort_values(by=time_col)
+        
+        # 5. 设置时间索引
+        df_filled = df_filled.set_index(time_col)
+        
+        # 6. 按分钟重采样
+        df_filled = df_filled.asfreq('1T')
+        
+        # 7. 线性插值
+        df_filled[value_col] = df_filled[value_col].interpolate(
+            method='linear', 
+            limit_direction='both'
+        )
+        
+        # 8. 重置索引
+        df_filled = df_filled.reset_index()
+        
+        return df_filled
+        
+    except Exception as e:
+        # 如果出错，将错误信息打印并返回原数据（或重新抛出）
+        raise ValueError(f"数据补全失败: {str(e)}")
 # -------------------- 主界面 --------------------
 def main():
     # 初始化中文字体
@@ -229,8 +218,12 @@ def main():
         
         # ===== 新增：数据补全 =====
         # 调用插值函数，将数据补全为连续的分钟级序列
-        df = fill_missing_minutes(df, time_col='datetime', value_col='load')
-        st.success(f"✅ 数据已补全为连续分钟序列，共 {len(df)} 条记录")
+        try:
+            df = fill_missing_minutes(df, time_col='datetime', value_col='load')
+            st.success(f"✅ 数据已补全为连续分钟序列，共 {len(df)} 条记录")
+        except Exception as e:
+            st.error(f"❌ 数据补全失败: {e}")
+            st.stop()   # 停止后续执行
         
                 
         # 数据概览
