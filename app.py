@@ -185,14 +185,14 @@ def main():
         
         fig_hist, ax_hist = plt.subplots(figsize=(12, 3))
         ax_hist.plot(df['datetime'], df['load'], linewidth=0.8, color='#1E88E5')
-        ax_hist.set_title("历史负荷曲线")
+        ax_hist.set_title("Historical data curve")
         ax_hist.grid(True, alpha=0.3)
         
         # ----- 新增：横坐标刻度设为每小时一个标签 -----
-        ax_hist.xaxis.set_major_locator(mdates.HourLocator(interval=1))   # 每小时一个主刻度
+        ax_hist.xaxis.set_major_locator(mdates.HourLocator(interval=2))   # 每小时一个主刻度
         ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))  # 格式：月-日 时:分
         # 如果数据跨度较短（比如只有几天），还可以显示更密集的次刻度：
-        # ax_hist.xaxis.set_minor_locator(mdates.MinuteLocator(interval=15))  # 每15分钟一个次刻度
+        # ax_hist.xaxis.set_minor_locator(mdates.MinuteLocator(interval=30))  # 每30分钟一个次刻度
         # 防止标签重叠，旋转45度
         plt.setp(ax_hist.xaxis.get_majorticklabels(), rotation=45, ha='right')
         
