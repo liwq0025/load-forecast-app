@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import io
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
 # -------------------- 页面配置 --------------------
@@ -77,7 +78,11 @@ class TCN(nn.Module):
 
 # -------------------- 加载预训练模型（缓存，只加载一次） --------------------
 @st.cache_resource
-def load_model(model_path="tcn_load_forecast_best1.pth", device='cpu'):
+def load_model(device='cpu'):
+    # 获取当前 app.py 文件所在的文件夹路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # 拼接出模型文件的完整绝对路径
+    model_path = os.path.join(script_dir, "tcn_load_forecast_best1.pth")
     # 注意：这些参数必须与训练时完全一致！
     INPUT_SIZE = 1
     OUTPUT_STEPS = 60       # 预测未来60分钟
@@ -112,7 +117,8 @@ def main():
     
     # 加载模型（默认在当前目录寻找 tcn_load_forecast_best1.pth）
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model, OUTPUT_STEPS = load_model("tcn_load_forecast_best1.pth", device)
+    # model, OUTPUT_STEPS = load_model("tcn_load_forecast_best1.pth", device)
+    model, OUTPUT_STEPS = load_model(device)
     if model is None:
         st.stop()   # 如果模型加载失败，停止后续操作
     
