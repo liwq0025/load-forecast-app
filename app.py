@@ -129,6 +129,55 @@ def load_model(device='cpu'):
         st.error(f"❌ 模型加载失败，请确认模型文件存在且格式正确。错误信息：{e}")
         return None, None
 
+# -------------------- 数据补全函数 --------------------
+def fill_missing_minutes(df, time_col='datetime', value_col='load'):
+    """
+    将时间序列补全为连续的分钟级数据，缺失值使用线性插值（前后两点插值）
+    
+    Args:
+        df (pd.DataFrame): 原始数据，需包含时间列和负荷列
+        time_col (str): 时间列名称，默认为 'datetime'
+        value_col (str): 负荷列名称，默认为 'load'
+    
+    Returns:
+        pd.DataFrame: 补全后的数据（时间连续，每分钟一条）
+    """
+    # 1. 确保时间列是 datetime 类型
+    df[time_col] = pd.to_datetime(df[time_col])
+    
+    # 2. 如果有重复时间，保留第一条记录（防止重采样报错）
+    df = df.drop_duplicates(subset=[time_col], keep='first')
+    
+    # 3. 按时间排序（确保顺序正确）
+    df = df.sort_values(by=time_col)
+    
+    # 4. 将时间列设置为索引
+    df = df.set_index(time_col)
+    
+    # 5. 按分钟重采样（缺失分钟自动填充为 NaN）
+    df_resampled = df.asfreq('1T')  # '1T' 表示 1 分钟
+    
+    # 6. 对负荷列进行线性插值（使用前后两个点）
+    #    method='linear' 即用前后两个有效值的斜率计算中间缺失值
+    #    limit_direction='both' 确保开头和结尾的缺失也能被填充（用最近的边界值）
+    df_resampled[value_col] = df_resampled[value_col].interpolate(
+        method='linear', 
+        limit_direction='both'
+    )
+    
+    # 7. 重置索引，将时间恢复为列
+    df_resampled = df_resampled.reset_index()
+    
+    # 8. 重命名回原来的列名
+    df_resampled.rename(columns={'index': time_col}, inplace=True)
+    
+    # 9. 统计补全情况（方便调试）
+    original_count = len(df)
+    filled_count = len(df_resampled)
+    missing_count = filled_count - original_count
+    print(f"✅ 数据补全完成: 原始 {original_count} 条 → 补全后 {filled_count} 条 (插值填充了 {missing_count} 个缺失分钟)")
+    
+    return df_resampled
 # -------------------- 主界面 --------------------
 def main():
     # 初始化中文字体
@@ -162,6 +211,14 @@ def main():
         if load_col is None:
             load_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
         
+        # try:
+        #     df['datetime'] = pd.to_datetime(df[time_col])
+        #     df['load'] = df[load_col].astype(float)
+        # except:
+        #     st.error("❌ 日期或数值格式解析失败，请检查数据。")
+        #     return
+        # df = df.dropna(subset=['load'])
+
         try:
             df['datetime'] = pd.to_datetime(df[time_col])
             df['load'] = df[load_col].astype(float)
@@ -170,6 +227,12 @@ def main():
             return
         df = df.dropna(subset=['load'])
         
+        # ===== 新增：数据补全 =====
+        # 调用插值函数，将数据补全为连续的分钟级序列
+        df = fill_missing_minutes(df, time_col='datetime', value_col='load')
+        st.success(f"✅ 数据已补全为连续分钟序列，共 {len(df)} 条记录")
+        
+                
         # 数据概览
         st.subheader("📊 数据概览")
         col_a, col_b, col_c = st.columns(3)
