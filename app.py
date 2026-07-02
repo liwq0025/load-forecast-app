@@ -8,8 +8,40 @@ from sklearn.preprocessing import StandardScaler
 import io
 import warnings
 import os
+import urllib.request   # 新增，用于下载字体
 warnings.filterwarnings('ignore')
-
+# -------------------- 中文字体配置（解决云服务器中文乱码） --------------------
+@st.cache_resource
+def setup_chinese_font():
+    """自动下载并注册中文字体，确保Matplotlib显示中文"""
+    # 获取当前脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    font_dir = os.path.join(script_dir, 'fonts')
+    os.makedirs(font_dir, exist_ok=True)
+    
+    # 字体文件路径（使用 NotoSansSC 开源字体）
+    font_path = os.path.join(font_dir, 'NotoSansSC-Regular.otf')
+    
+    # 如果字体文件不存在，则自动下载
+    if not os.path.exists(font_path):
+        try:
+            with st.spinner("⏳ 首次运行正在下载中文字体（约10MB），请稍候..."):
+                # 从 Google Fonts 镜像下载（国内用户可能较慢，但能保证成功）
+                url = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf"
+                urllib.request.urlretrieve(url, font_path)
+        except Exception as e:
+            st.warning(f"⚠️ 字体自动下载失败（{e}），将尝试使用系统默认字体。")
+            return False
+    
+    # 注册字体到 Matplotlib
+    if os.path.exists(font_path):
+        fm.fontManager.addfont(font_path)
+        # 设置字体族，优先使用刚下载的字体
+        plt.rcParams['font.sans-serif'] = ['NotoSansSC', 'SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+        plt.rcParams['axes.unicode_minus'] = False   # 解决负号显示为方块的问题
+        return True
+    return False
+    
 # -------------------- 页面配置 --------------------
 st.set_page_config(page_title="智能用能负荷预测系统", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""
@@ -111,6 +143,9 @@ def load_model(device='cpu'):
 
 # -------------------- 主界面 --------------------
 def main():
+    # 初始化中文字体
+    setup_chinese_font()
+    
     # 固定模型参数（显示给用户，方便知道预测步长）
     st.sidebar.markdown("### 📌 模型信息")
     st.sidebar.info("预训练模型参数：\n- 输入：过去720分钟\n- 输出：未来60分钟")
@@ -185,7 +220,8 @@ def main():
             
             # 生成未来时间戳
             last_time = df['datetime'].iloc[-1]
-            future_times = pd.date_range(start=last_time + pd.Timedelta(minutes=1), periods=OUTPUT_STEPS, freq='1T')
+            # future_times = pd.date_range(start=last_time + pd.Timedelta(minutes=1), periods=OUTPUT_STEPS, freq='1T')
+            future_times = pd.date_range(start=last_time + pd.Timedelta(minutes=1), periods=OUTPUT_STEPS, freq='min')
             
             # 显示预测结果
             st.subheader("🔮 预测结果分析")
