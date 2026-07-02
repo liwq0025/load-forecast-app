@@ -151,7 +151,7 @@ def fill_missing_minutes(df, time_col, value_col):
         df_filled = df_filled.set_index(time_col)
         
         # 6. 按分钟重采样
-        df_filled = df_filled.asfreq('1T')
+        df_filled = df_filled.asfreq('1min')
         
         # 7. 线性插值
         df_filled[value_col] = df_filled[value_col].interpolate(
