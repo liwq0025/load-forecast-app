@@ -188,7 +188,7 @@ def main():
         # 历史曲线
         fig_hist, ax_hist = plt.subplots(figsize=(12, 3))
         ax_hist.plot(df_hourly['datetime'], df_hourly['load'], linewidth=0.8, color='#1E88E5')
-        ax_hist.set_title("历史负荷曲线（小时级）")
+        ax_hist.set_title("Historical data curve(hour)")
         ax_hist.grid(True, alpha=0.3)
         ax_hist.xaxis.set_major_locator(mdates.DayLocator(interval=1))
         ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
