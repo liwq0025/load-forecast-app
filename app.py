@@ -232,7 +232,7 @@ def main():
             
             # 生成未来时间戳（预测未来24小时）
             last_time = df_hourly['datetime'].iloc[-1]
-            future_times = pd.date_range(start=last_time + timedelta(hours=1), periods=24, freq='1H')
+            future_times = pd.date_range(start=last_time + timedelta(hours=1), periods=24, freq='1h')
             
             # 由于模型是单步预测，我们需要用最后24小时的预测值作为未来24小时的参考
             # 但更准确的做法是用历史最后几个小时预测下一个小时，然后滚动
