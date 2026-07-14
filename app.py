@@ -69,7 +69,7 @@ def resample_to_hourly(df, time_col, value_col):
         df_hourly = df.copy()
         df_hourly[time_col] = pd.to_datetime(df_hourly[time_col])
         df_hourly = df_hourly.set_index(time_col)
-        df_hourly = df_hourly.resample('1H').mean()
+        df_hourly = df_hourly.resample('1h').mean()
         df_hourly = df_hourly.dropna(subset=[value_col])
         df_hourly = df_hourly.reset_index()
         return df_hourly
