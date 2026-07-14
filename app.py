@@ -305,23 +305,31 @@ def main():
             
             # 绘制预测曲线（展示最近3天历史 + 未来24小时）
             fig_pred, ax_pred = plt.subplots(figsize=(14, 5))
-            
+
             # 取最近72小时历史数据（3天）
             show_hist = min(72, len(df_hourly))
             plot_hist_df = df_hourly.iloc[-show_hist:]
-            
+
+            # ---- 绘制历史曲线 ----
             ax_pred.plot(plot_hist_df['datetime'], plot_hist_df['load'], 
-                        label='历史负荷', linewidth=2, color='#1E88E5')
-            ax_pred.plot(future_times, future_loads, 
-                        label='未来预测 (XGBoost)', linewidth=2.5, color='#FF6F00', marker='o', markersize=4)
-            
-            # 在历史与未来交界处画一条竖线
+                        label='Historical load', linewidth=2, color='#1E88E5')
+
+            # ---- 构造连接历史和未来的连续序列 ----
+            # 将历史最后一个点作为预测曲线的起点
+            connected_times = [plot_hist_df['datetime'].iloc[-1]] + future_times
+            connected_loads = [plot_hist_df['load'].iloc[-1]] + future_loads
+
+            # ---- 绘制预测曲线（从历史最后一点无缝延伸） ----
+            ax_pred.plot(connected_times, connected_loads, 
+                        label='Future forecast (XGBoost)', linewidth=2.5, color='#FF6F00', marker='o', markersize=4)
+
+            # 在历史与未来交界处画一条竖线（依然保留，作为视觉参考）
             last_time = df_hourly['datetime'].iloc[-1]
             ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, 
-                           label='当前时刻（预测起点）')
-            
+                        label='Current Time (Prediction Start)')
+
             ax_pred.legend(fontsize=12)
-            ax_pred.set_title("未来24小时负荷走势预测", fontsize=16)
+            ax_pred.set_title("24-hour load trend forecast", fontsize=16)
             ax_pred.grid(True, alpha=0.3)
             ax_pred.xaxis.set_major_locator(mdates.HourLocator(interval=6))
             ax_pred.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
