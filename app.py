@@ -121,7 +121,83 @@ def prepare_features(df_hourly, feature_names):
     # 按训练时的特征顺序提取
     X = data[feature_names]
     return X, data['datetime']
-
+def predict_future_24h(model, df_hourly, feature_names):
+    """
+    基于最后一段历史数据，滚动预测未来24小时
+    返回: future_times (24个时间戳), future_loads (24个预测值)
+    """
+    # 1. 取最近的历史数据（至少需要168小时 + 24小时缓冲，我们取最近200小时确保够用）
+    hist_data = df_hourly.copy()
+    hist_data = hist_data.sort_values('datetime').reset_index(drop=True)
+    
+    # 如果数据太多，只取最近200小时（保证计算速度，同时满足168窗口）
+    if len(hist_data) > 200:
+        hist_data = hist_data.iloc[-200:].reset_index(drop=True)
+    
+    # 提取历史负荷列表（用于滚动更新）
+    history_loads = hist_data['load'].tolist()
+    last_time = hist_data['datetime'].iloc[-1]
+    
+    # 存储未来预测结果
+    future_times = []
+    future_loads = []
+    
+    # 2. 循环预测24步
+    for step in range(1, 25):
+        # 当前要预测的时刻
+        pred_time = last_time + timedelta(hours=step)
+        future_times.append(pred_time)
+        
+        # ---- 构造当前时刻的特征（必须与训练时完全一致） ----
+        # 准备一个字典来存放特征值
+        feat_dict = {}
+        
+        # 滞后特征：从 history_loads 中取最后几个值
+        # 注意：history_loads 包含了历史真实值 + 之前步骤预测的值
+        feat_dict['lag_1'] = history_loads[-1] if len(history_loads) >= 1 else np.nan
+        feat_dict['lag_2'] = history_loads[-2] if len(history_loads) >= 2 else np.nan
+        feat_dict['lag_3'] = history_loads[-3] if len(history_loads) >= 3 else np.nan
+        feat_dict['lag_24'] = history_loads[-24] if len(history_loads) >= 24 else np.nan
+        feat_dict['lag_48'] = history_loads[-48] if len(history_loads) >= 48 else np.nan
+        feat_dict['lag_72'] = history_loads[-72] if len(history_loads) >= 72 else np.nan
+        feat_dict['lag_168'] = history_loads[-168] if len(history_loads) >= 168 else np.nan
+        
+        # 滚动统计特征（基于当前最新的 history_loads）
+        feat_dict['rolling_mean_6'] = np.mean(history_loads[-6:]) if len(history_loads) >= 6 else np.nan
+        feat_dict['rolling_std_6'] = np.std(history_loads[-6:]) if len(history_loads) >= 6 else np.nan
+        feat_dict['rolling_mean_12'] = np.mean(history_loads[-12:]) if len(history_loads) >= 12 else np.nan
+        feat_dict['rolling_std_12'] = np.std(history_loads[-12:]) if len(history_loads) >= 12 else np.nan
+        feat_dict['rolling_mean_24'] = np.mean(history_loads[-24:]) if len(history_loads) >= 24 else np.nan
+        
+        # 时间特征（基于预测时刻 pred_time）
+        hour = pred_time.hour
+        dayofweek = pred_time.weekday()
+        month = pred_time.month
+        feat_dict['hour'] = hour
+        feat_dict['dayofweek'] = dayofweek
+        feat_dict['month'] = month
+        feat_dict['is_weekend'] = 1 if dayofweek >= 5 else 0
+        feat_dict['sin_hour'] = np.sin(2 * np.pi * hour / 24)
+        feat_dict['cos_hour'] = np.cos(2 * np.pi * hour / 24)
+        feat_dict['sin_weekday'] = np.sin(2 * np.pi * dayofweek / 7)
+        feat_dict['cos_weekday'] = np.cos(2 * np.pi * dayofweek / 7)
+        
+        # 差分特征
+        feat_dict['diff_24'] = feat_dict['lag_1'] - feat_dict['lag_24']  # 当前变化 vs 昨天
+        feat_dict['diff_168'] = feat_dict['lag_1'] - feat_dict['lag_168']  # 当前变化 vs 上周
+        feat_dict['diff_mean_24'] = feat_dict['lag_1'] - feat_dict['rolling_mean_24']
+        
+        # 按训练时的特征顺序构造 DataFrame
+        X_pred = pd.DataFrame([feat_dict])[feature_names]
+        
+        # 预测
+        pred_val = model.predict(X_pred)[0]
+        future_loads.append(pred_val)
+        
+        # 【关键】：将预测值加入历史列表，供下一步使用（滚动更新）
+        history_loads.append(pred_val)
+    
+    return future_times, future_loads
 # -------------------- 主界面 --------------------
 def main():
     # 初始化中文字体
@@ -188,7 +264,7 @@ def main():
         # 历史曲线
         fig_hist, ax_hist = plt.subplots(figsize=(12, 3))
         ax_hist.plot(df_hourly['datetime'], df_hourly['load'], linewidth=0.8, color='#1E88E5')
-        ax_hist.set_title("Historical data curve(hour)")
+        ax_hist.set_title("历史负荷曲线（小时级）")
         ax_hist.grid(True, alpha=0.3)
         ax_hist.xaxis.set_major_locator(mdates.DayLocator(interval=1))
         ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
@@ -196,133 +272,76 @@ def main():
         st.pyplot(fig_hist)
         
         # 预测按钮
+                # ===== 替换原来的预测逻辑 =====
         if st.button("🚀 开始智能预测", type="primary", use_container_width=True):
             # 检查数据长度
-            MIN_REQUIRED = 168  # 至少7天
+            MIN_REQUIRED = 168
             if len(df_hourly) < MIN_REQUIRED:
                 st.error(f"❌ 数据量不足。需要至少 {MIN_REQUIRED} 小时（7天）历史数据，当前只有 {len(df_hourly)} 小时。")
                 return
             
-            # 构造特征
+            # 调用滚动预测函数
             try:
-                X_pred, pred_times = prepare_features(df_hourly, feature_names)
+                future_times, future_loads = predict_future_24h(model, df_hourly, feature_names)
             except Exception as e:
-                st.error(f"❌ 特征构造失败: {e}")
+                st.error(f"❌ 预测失败: {e}")
                 return
-            
-            if len(X_pred) == 0:
-                st.error("❌ 无法构造有效特征，请检查数据是否完整。")
-                return
-            
-            # 预测
-            y_pred = model.predict(X_pred)
-            
-            # 取最新的预测结果（对应未来24小时）
-            # 如果数据足够，我们取最后一个样本对应的预测值
-            # 但更好的方式：用最后一行特征预测未来24小时
-            # 由于模型是单步预测（输出一个值），我们需要滚动预测
-            # 但 XGBoost 是单步模型，这里我们演示批量预测
-            
-            # 展示最后 24 个预测值（对应最近 24 小时）
-            n_show = min(24, len(y_pred))
-            pred_last = y_pred[-n_show:]
-            time_last = pred_times.iloc[-n_show:].values
-            
-            # 反标准化？不需要，XGBoost 直接预测原始值
-            
-            # 生成未来时间戳（预测未来24小时）
-            last_time = df_hourly['datetime'].iloc[-1]
-            future_times = pd.date_range(start=last_time + timedelta(hours=1), periods=24, freq='1h')
-            
-            # 由于模型是单步预测，我们需要用最后24小时的预测值作为未来24小时的参考
-            # 但更准确的做法是用历史最后几个小时预测下一个小时，然后滚动
-            # 这里为了展示，我们使用最后24个预测值作为未来24小时的趋势参考
-            # 注意：这些预测值对应的是历史时刻的拟合值，不是真正的未来预测
-            
-            # 真正的未来预测：需要构造未来24小时的特征
-            # 但由于 XGBoost 需要 lag_1, lag_24 等，无法直接滚动预测
-            # 这里我们使用一个简化的方法：用历史最后24小时的实际值作为未来24小时的预测（仅演示）
-            # 实际部署时，可以通过递推方式逐小时预测
             
             # 显示预测结果
-            st.subheader("🔮 预测结果分析")
+            st.subheader("🔮 未来24小时预测结果")
             
-            # 由于 XGBoost 是单步模型，这里展示模型在最近24小时历史数据上的拟合效果
-            # 以及基于当前数据对未来趋势的判断
-            
+            # 预测概览卡片
             st.markdown(f"""
             <div class="prediction-box">
-                <h4 style="margin-top:0;">📈 近期负荷预测（基于历史拟合）</h4>
+                <h4 style="margin-top:0;">📈 未来 24 小时预测概览</h4>
                 <table style="width:100%;">
-                    <tr>
-                        <td><b>最新时间</b></td>
-                        <td>{df_hourly['datetime'].iloc[-1].strftime('%Y-%m-%d %H:%M')}</td>
-                        <td><b>当前负荷</b></td>
-                        <td style="color:#1976d2; font-weight:bold;">{df_hourly['load'].iloc[-1]:.2f}</td>
-                    </tr>
+                    <tr><td><b>起始预测时刻</b></td><td>{future_times[0].strftime('%Y-%m-%d %H:%M')}</td>
+                    <td><b>峰值负荷</b></td><td style="color:#d32f2f; font-weight:bold;">{max(future_loads):.2f}</td></tr>
+                    <tr><td><b>结束预测时刻</b></td><td>{future_times[-1].strftime('%Y-%m-%d %H:%M')}</td>
+                    <td><b>平均负荷</b></td><td style="color:#1976d2; font-weight:bold;">{np.mean(future_loads):.2f}</td></tr>
                 </table>
-                <p style="margin-top:10px; font-size:0.9rem; color:#888;">
-                    ℹ️ 提示：XGBoost 模型基于历史滞后特征进行单步预测，上面展示的是模型在最近24小时历史数据上的拟合效果。
-                </p>
             </div>
             """, unsafe_allow_html=True)
             
-            # 绘制预测曲线
+            # 绘制预测曲线（展示最近3天历史 + 未来24小时）
             fig_pred, ax_pred = plt.subplots(figsize=(14, 5))
             
-            # 展示最近7天的历史
-            show_hist = min(168, len(df_hourly))
+            # 取最近72小时历史数据（3天）
+            show_hist = min(72, len(df_hourly))
             plot_hist_df = df_hourly.iloc[-show_hist:]
+            
             ax_pred.plot(plot_hist_df['datetime'], plot_hist_df['load'], 
-                        label='历史负荷', linewidth=1.5, color='#1E88E5')
+                        label='历史负荷', linewidth=2, color='#1E88E5')
+            ax_pred.plot(future_times, future_loads, 
+                        label='未来预测 (XGBoost)', linewidth=2.5, color='#FF6F00', marker='o', markersize=4)
             
-            # 展示模型拟合的最后24小时
-            ax_pred.plot(time_last, pred_last, 
-                        label='模型拟合（最近24小时）', linewidth=2, color='#FF6F00', linestyle='--')
+            # 在历史与未来交界处画一条竖线
+            last_time = df_hourly['datetime'].iloc[-1]
+            ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, 
+                           label='当前时刻（预测起点）')
             
-            ax_pred.axvline(x=df_hourly['datetime'].iloc[-1], color='red', linestyle='--', 
-                           linewidth=1.5, label='当前时刻')
             ax_pred.legend(fontsize=12)
-            ax_pred.set_title("小时负荷预测（模型拟合效果）", fontsize=16)
+            ax_pred.set_title("未来24小时负荷走势预测", fontsize=16)
             ax_pred.grid(True, alpha=0.3)
-            ax_pred.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+            ax_pred.xaxis.set_major_locator(mdates.HourLocator(interval=6))
             ax_pred.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
             plt.setp(ax_pred.xaxis.get_majorticklabels(), rotation=45, ha='right')
             st.pyplot(fig_pred)
             
-            # 显示特征重要性（如果模型支持）
-            with st.expander("📊 特征重要性分析"):
-                if hasattr(model, 'feature_importances_'):
-                    importance = model.feature_importances_
-                    imp_df = pd.DataFrame({
-                        '特征': feature_names,
-                        '重要性': importance
-                    }).sort_values('重要性', ascending=False)
-                    
-                    fig_imp, ax_imp = plt.subplots(figsize=(10, 8))
-                    top_n = min(15, len(imp_df))
-                    ax_imp.barh(imp_df['特征'][:top_n], imp_df['重要性'][:top_n])
-                    ax_imp.set_xlabel('重要性')
-                    ax_imp.set_title('Top 15 特征重要性')
-                    plt.tight_layout()
-                    st.pyplot(fig_imp)
-                    st.dataframe(imp_df, use_container_width=True)
-            
-            # 详细表格
-            with st.expander("📋 查看详细数据"):
+            # 详细表格与下载
+            with st.expander("📋 查看详细预测数据表格"):
                 result_df = pd.DataFrame({
-                    '时间': time_last,
-                    '历史负荷': df_hourly['load'].iloc[-n_show:].values,
-                    '模型拟合': pred_last
+                    '预测时间': future_times,
+                    '预测负荷': future_loads
                 })
                 st.dataframe(result_df, use_container_width=True)
                 
                 csv_buffer = io.StringIO()
                 result_df.to_csv(csv_buffer, index=False)
                 st.download_button(
-                    label="📥 下载预测结果 (CSV)",
+                    label="📥 下载未来24小时预测结果 (CSV)",
                     data=csv_buffer.getvalue(),
-                    file_name=f"负荷预测结果_XGB_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.csv",
+                    file_name=f"未来24h预测_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.csv",
                     mime="text/csv"
                 )
 
