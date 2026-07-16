@@ -198,15 +198,8 @@ def backtest_model(model, df_hourly, feature_names, test_hours=24, min_history=1
         
         # 预测
         pred_val = model.predict(X_pred)[0]
-        preds.append(pred_val)
+        preds.append(pred_val)       
         
-        # 【关键】将**真实值**加入历史，以进行下一步预测（模拟在线场景：我们已知真实值，但实际预测时只能用预测值，这里为了评估模型在真实场景下的表现，使用真实值更准确）
-        # 在实际应用中，我们无法获得未来的真实值，只能用预测值。但在回测中，我们可以用真实值来驱动，这评估的是模型在“理想历史信息”下的能力。
-        # 如果你想更严格地评估模型在“递推预测”中的表现（即误差累积），应使用预测值。这里我们采用真实值（更乐观），但两种方式都可以，根据需求选择。
-        # 为了更接近真实上线情况，我们使用预测值来滚动（保守估计）。
-        # 但因为我们这里测试的是单步预测能力，使用真实值可以分离误差累积的影响。
-        # 我建议使用真实值，因为回测的主要目的是评估模型的特征映射能力，而不是累积误差。
-        # 用户可自行选择，这里我采用真实值（更常见于回测）。
         history_loads.append(test['load'].iloc[i])  # 使用真实值
     
     # 计算指标
@@ -405,7 +398,7 @@ def main():
                 ax_back.plot(backtest_result['datetime'], backtest_result['pred'], 
                             label='Predicted load', linewidth=2, linestyle='--', color='#FF6F00')
                 ax_back.legend(fontsize=12)
-                ax_back.set_title(f"回测结果（最近 {min_backtest_hours} 小时）", fontsize=14)
+                ax_back.set_title(f"Backtesting results (in the last {min_backtest_hours} hours)", fontsize=14)
                 ax_back.grid(True, alpha=0.3)
                 ax_back.xaxis.set_major_locator(mdates.HourLocator(interval=4))
                 ax_back.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
