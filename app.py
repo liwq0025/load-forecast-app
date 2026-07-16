@@ -121,6 +121,111 @@ def prepare_features(df_hourly, feature_names):
     # 按训练时的特征顺序提取
     X = data[feature_names]
     return X, data['datetime']
+def backtest_model(model, df_hourly, feature_names, test_hours=24, min_history=168):
+    """
+    使用历史数据的最后 test_hours 小时进行滚动回测，评估模型精度
+    
+    Args:
+        model: XGBoost 模型
+        df_hourly: 小时级数据 DataFrame，需包含 'datetime' 和 'load' 列
+        feature_names: 特征列名列表
+        test_hours: 用于测试的小时数（默认 24）
+        min_history: 最小历史窗口（小时数），用于构造特征，默认 168（7天）
+    
+    Returns:
+        dict: 包含指标和预测结果的字典
+    """
+    data = df_hourly.copy().sort_values('datetime').reset_index(drop=True)
+    
+    if len(data) < min_history + test_hours:
+        return None  # 数据不足，无法回测
+    
+    # 分割：训练历史（用于构造特征）和测试集
+    # 我们取最后 test_hours 小时作为测试集，它们之前的全部数据作为历史
+    test_start_idx = len(data) - test_hours
+    history = data.iloc[:test_start_idx].copy()
+    test = data.iloc[test_start_idx:].copy()
+    
+    # 滚动预测：依次预测测试集中的每个点
+    preds = []
+    trues = test['load'].values   
+    
+    # 初始化历史负荷列表（包含所有原始历史）
+    history_loads = history['load'].tolist()
+    
+    for i in range(test_hours):
+        # 当前要预测的时间点
+        pred_time = test['datetime'].iloc[i]
+        
+        # 构造特征（使用当前的 history_loads，其长度应至少为 min_history）
+        feat_dict = {}
+        # 滞后特征
+        feat_dict['lag_1'] = history_loads[-1] if len(history_loads) >= 1 else np.nan
+        feat_dict['lag_2'] = history_loads[-2] if len(history_loads) >= 2 else np.nan
+        feat_dict['lag_3'] = history_loads[-3] if len(history_loads) >= 3 else np.nan
+        feat_dict['lag_24'] = history_loads[-24] if len(history_loads) >= 24 else np.nan
+        feat_dict['lag_48'] = history_loads[-48] if len(history_loads) >= 48 else np.nan
+        feat_dict['lag_72'] = history_loads[-72] if len(history_loads) >= 72 else np.nan
+        feat_dict['lag_168'] = history_loads[-168] if len(history_loads) >= 168 else np.nan
+        
+        # 滚动统计
+        feat_dict['rolling_mean_6'] = np.mean(history_loads[-6:]) if len(history_loads) >= 6 else np.nan
+        feat_dict['rolling_std_6'] = np.std(history_loads[-6:]) if len(history_loads) >= 6 else np.nan
+        feat_dict['rolling_mean_12'] = np.mean(history_loads[-12:]) if len(history_loads) >= 12 else np.nan
+        feat_dict['rolling_std_12'] = np.std(history_loads[-12:]) if len(history_loads) >= 12 else np.nan
+        feat_dict['rolling_mean_24'] = np.mean(history_loads[-24:]) if len(history_loads) >= 24 else np.nan
+        
+        # 时间特征
+        hour = pred_time.hour
+        dayofweek = pred_time.weekday()
+        month = pred_time.month
+        feat_dict['hour'] = hour
+        feat_dict['dayofweek'] = dayofweek
+        feat_dict['month'] = month
+        feat_dict['is_weekend'] = 1 if dayofweek >= 5 else 0
+        feat_dict['sin_hour'] = np.sin(2 * np.pi * hour / 24)
+        feat_dict['cos_hour'] = np.cos(2 * np.pi * hour / 24)
+        feat_dict['sin_weekday'] = np.sin(2 * np.pi * dayofweek / 7)
+        feat_dict['cos_weekday'] = np.cos(2 * np.pi * dayofweek / 7)
+        
+        # 差分特征
+        feat_dict['diff_24'] = feat_dict['lag_1'] - feat_dict['lag_24']
+        feat_dict['diff_168'] = feat_dict['lag_1'] - feat_dict['lag_168']
+        feat_dict['diff_mean_24'] = feat_dict['lag_1'] - feat_dict['rolling_mean_24']
+        
+        # 构造 DataFrame
+        X_pred = pd.DataFrame([feat_dict])[feature_names]
+        
+        # 预测
+        pred_val = model.predict(X_pred)[0]
+        preds.append(pred_val)
+        
+        # 【关键】将**真实值**加入历史，以进行下一步预测（模拟在线场景：我们已知真实值，但实际预测时只能用预测值，这里为了评估模型在真实场景下的表现，使用真实值更准确）
+        # 在实际应用中，我们无法获得未来的真实值，只能用预测值。但在回测中，我们可以用真实值来驱动，这评估的是模型在“理想历史信息”下的能力。
+        # 如果你想更严格地评估模型在“递推预测”中的表现（即误差累积），应使用预测值。这里我们采用真实值（更乐观），但两种方式都可以，根据需求选择。
+        # 为了更接近真实上线情况，我们使用预测值来滚动（保守估计）。
+        # 但因为我们这里测试的是单步预测能力，使用真实值可以分离误差累积的影响。
+        # 我建议使用真实值，因为回测的主要目的是评估模型的特征映射能力，而不是累积误差。
+        # 用户可自行选择，这里我采用真实值（更常见于回测）。
+        history_loads.append(test['load'].iloc[i])  # 使用真实值
+    
+    # 计算指标
+    trues = test['load'].values
+    preds = np.array(preds)
+    mae = np.mean(np.abs(trues - preds))
+    mape = np.mean(np.abs((trues - preds) / (trues + 1e-8))) * 100
+    rmse = np.sqrt(np.mean((trues - preds) ** 2))
+    r2 = 1 - np.sum((trues - preds) ** 2) / np.sum((trues - np.mean(trues)) ** 2)
+    
+    return {
+        'true': trues,
+        'pred': preds,
+        'datetime': test['datetime'].values,
+        'mae': mae,
+        'mape': mape,
+        'rmse': rmse,
+        'r2': r2
+    }
 def predict_future_24h(model, df_hourly, feature_names):
     """
     基于最后一段历史数据，滚动预测未来24小时
@@ -270,6 +375,46 @@ def main():
         ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
         plt.setp(ax_hist.xaxis.get_majorticklabels(), rotation=45, ha='right')
         st.pyplot(fig_hist)
+        
+        # ===== 新增：模型回测评估 =====
+        st.subheader("📊 模型回测评估")
+        
+        # 检查数据是否足够进行回测（至少需要 168 + 24 小时）
+        min_backtest_hours = 24
+        min_history = 168
+        if len(df_hourly) >= min_history + min_backtest_hours:
+            with st.spinner("正在运行回测评估，请稍候..."):
+                backtest_result = backtest_model(
+                    model, df_hourly, feature_names,
+                    test_hours=min_backtest_hours,
+                    min_history=min_history
+                )
+            
+            if backtest_result is not None:
+                # 显示指标卡片
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("MAE", f"{backtest_result['mae']:.3f}")
+                col2.metric("MAPE", f"{backtest_result['mape']:.2f}%")
+                col3.metric("RMSE", f"{backtest_result['rmse']:.3f}")
+                col4.metric("R²", f"{backtest_result['r2']:.4f}")
+                
+                # 绘制回测对比曲线
+                fig_back, ax_back = plt.subplots(figsize=(14, 4))
+                ax_back.plot(backtest_result['datetime'], backtest_result['true'], 
+                            label='Actual load', linewidth=2, color='#1E88E5')
+                ax_back.plot(backtest_result['datetime'], backtest_result['pred'], 
+                            label='Predicted load', linewidth=2, linestyle='--', color='#FF6F00')
+                ax_back.legend(fontsize=12)
+                ax_back.set_title(f"回测结果（最近 {min_backtest_hours} 小时）", fontsize=14)
+                ax_back.grid(True, alpha=0.3)
+                ax_back.xaxis.set_major_locator(mdates.HourLocator(interval=4))
+                ax_back.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+                plt.setp(ax_back.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                st.pyplot(fig_back)
+            else:
+                st.warning("回测失败，数据可能不足。")
+        else:
+            st.info(f"当前数据量 {len(df_hourly)} 小时，需要至少 {min_history + min_backtest_hours} 小时才能进行回测评估。")
         
         # 预测按钮
                 # ===== 替换原来的预测逻辑 =====
