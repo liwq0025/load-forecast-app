@@ -41,7 +41,7 @@ st.markdown('<p class="sub-title">基于 XGBoost 机器学习模型，上传 5 �
 
 # -------------------- 模型加载（根据类型） --------------------
 @st.cache_resource
-def load_xgb_model(model_type,user):
+def load_xgb_model(user,model_type):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if model_type == "负荷直接预测":
         model_name = f"model_{user}_xgb1.joblib"
