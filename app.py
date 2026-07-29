@@ -44,7 +44,7 @@ st.markdown('<p class="sub-title">基于 XGBoost 机器学习模型，上传 5 �
 def load_xgb_model(model_type):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if model_type == "负荷直接预测":
-        model_path = os.path.join(script_dir, "model_xn_xgb.joblib1")
+        model_path = os.path.join(script_dir, "model_xn_xgb1.joblib")
         feature_path = os.path.join(script_dir, "feature_names1.txt")
     else:  # 周偏差预测
         model_path = os.path.join(script_dir, "model_xn_xgb.joblib")
