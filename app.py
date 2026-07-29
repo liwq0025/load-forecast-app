@@ -41,19 +41,22 @@ st.markdown('<p class="sub-title">基于 XGBoost 机器学习模型，上传 5 �
 
 # -------------------- 模型加载（根据类型） --------------------
 @st.cache_resource
-def load_xgb_model(model_type):
+def load_xgb_model(model_type,user):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if model_type == "负荷直接预测":
-        model_path = os.path.join(script_dir, "model_xn_xgb1.joblib")
-        feature_path = os.path.join(script_dir, "feature_names1.txt")
+        model_name = f"model_{user}_xgb1.joblib"
+        feature_name = f"feature_names1_{user}.txt"
     else:  # 周偏差预测
-        model_path = os.path.join(script_dir, "model_xn_xgb.joblib")
-        feature_path = os.path.join(script_dir, "feature_names.txt")
+        model_name = f"model_{user}_xgb.joblib"
+        feature_name = f"feature_names_{user}.txt"
+
+    model_path = os.path.join(script_dir, model_name)
+    feature_path = os.path.join(script_dir, feature_name)
     try:
         model = joblib.load(model_path)
         with open(feature_path, 'r') as f:
             feature_names = [line.strip() for line in f.readlines()]
-        st.success(f"✅ {model_type} 模型加载成功！特征数: {len(feature_names)}")
+        st.success(f"✅ {user}用户 - {model_type} 模型加载成功！特征数: {len(feature_names)}")
         return model, feature_names
     except FileNotFoundError:
         st.error(f"❌ 模型文件未找到，请确保 {os.path.basename(model_path)} 和 {os.path.basename(feature_path)} 存在于应用目录")
@@ -504,16 +507,21 @@ def predict_future_24h_diff(model, df_5min, feature_names):
 # -------------------- 主界面 --------------------
 def main():
     setup_chinese_font()
+    # ==================== 新增：用户选择与模型类型选择 ====================
+    col_user, col_type = st.columns(2)
+    with col_user:
+        user = st.selectbox("选择用户", ("xn", "ty"))
+    with col_type:
+        model_type = st.radio("选择模型类型", ("负荷直接预测", "周偏差预测"))
+
+    model, feature_names = load_xgb_model(user, model_type)
     
-    # 模型类型选择
-    model_type = st.radio("选择模型类型", ("负荷直接预测", "周偏差预测"))
-    
-    model, feature_names = load_xgb_model(model_type)
     if model is None:
-        st.stop()
+        st.stop()    
     
     st.sidebar.markdown("### 📌 模型信息")
     st.sidebar.info(
+        f"用户: {user}\n"
         f"模型类型: {model_type}\n"
         f"特征数量: {len(feature_names)}\n"
         f"预测步长: 24小时（288个5分钟点）\n"
