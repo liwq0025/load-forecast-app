@@ -622,16 +622,7 @@ def main():
             st.error(f"❌ 数据补全失败: {e}")
             return
         
-        # ---- 让用户选择使用哪个负荷进行预测 ----
-        load_choice = st.radio(
-            "选择预测目标负荷",
-            ("供热负荷 (t/h)", "销售负荷 (t/h)")
-        )
-        
-        if load_choice == "供热负荷 (t/h)":
-            df_filled['load'] = df_filled['load_supply']
-        else:
-            df_filled['load'] = df_filled['load_sell']
+        df_filled['load'] = df_filled['load_supply']
         
         # 之后将 df_filled 作为后续处理的 DataFrame（包含 datetime 和 load）
         df_5min = df_filled[['datetime', 'load']].copy()
