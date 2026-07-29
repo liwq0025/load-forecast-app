@@ -571,7 +571,7 @@ def main():
     type=["csv", "xlsx"]
 )
     if uploaded_file is not None:
-        # ---- 根据文件扩展名读取 ----
+       # ---- 1. 根据文件类型读取 ----
         file_extension = uploaded_file.name.split('.')[-1].lower()
         try:
             if file_extension == 'csv':
@@ -584,46 +584,55 @@ def main():
         except Exception as e:
             st.error(f"❌ 文件读取失败: {e}")
             return
-        # df = pd.read_csv(uploaded_file)
-        # ---- 智能识别列名 ----
-        time_col = None
-        load_supply_col = None
-        load_sell_col = None
-        
-        for col in df.columns:
-            # 时间列
-            if '时间' in col or '日期' in col or 'datetime' in col.lower() or 'timestamp' in col.lower():
-                time_col = col
-            # 供热负荷列
-            if '供热' in col or '供' in col or 'supply' in col.lower():
-                load_supply_col = col
-            # 销售负荷列
-            if '销售' in col or '售' in col or 'sell' in col.lower():
-                load_sell_col = col
-        
-        # 如果未识别到，让用户手动选择（或使用默认第2、3列）
-        if time_col is None:
-            time_col = df.columns[0]
-        if load_supply_col is None:
-            # 尝试第二列
-            load_supply_col = df.columns[1] if len(df.columns) > 1 else None
-        if load_sell_col is None:
-            load_sell_col = df.columns[2] if len(df.columns) > 2 else None
-        
-        # 确保必要的列存在
+
+        # ---- 2. 列识别（优先按位置，回退到关键词） ----
+        # 如果列数 >= 4，假设为：序号、时间、供热负荷、销售负荷
+        if len(df.columns) >= 4:
+            time_col = df.columns[1]          # 第二列
+            load_supply_col = df.columns[2]   # 第三列
+            load_sell_col = df.columns[3]     # 第四列
+        else:
+            # 备用：关键词匹配
+            time_col = None
+            load_supply_col = None
+            load_sell_col = None
+            for col in df.columns:
+                col_lower = col.lower()
+                if '时间' in col or '日期' in col or 'datetime' in col_lower or 'timestamp' in col_lower:
+                    time_col = col
+                if '供热' in col or '供' in col or 'supply' in col_lower:
+                    load_supply_col = col
+                if '销售' in col or '售' in col or 'sell' in col_lower:
+                    load_sell_col = col
+            # 如果仍未找到，尝试用前几列作为备选
+            if time_col is None:
+                time_col = df.columns[0]
+            if load_supply_col is None:
+                load_supply_col = df.columns[1] if len(df.columns) > 1 else None
+            if load_sell_col is None:
+                load_sell_col = df.columns[2] if len(df.columns) > 2 else None
+
+        # 检查是否找到
         if time_col is None or load_supply_col is None or load_sell_col is None:
-            st.error("❌ 未找到时间列或两列负荷列，请检查 CSV 格式（应包含：时间、供热负荷、销售负荷）")
+            st.error("❌ 未找到时间列或两列负荷列，请确保数据包含：时间、供热负荷、销售负荷")
             return
-        
+
+        # ---- 3. 转换数据类型 ----
         try:
-            # 强制转换时间，并确保负荷为数值
-            df['datetime'] = pd.to_datetime(df[time_col])
+            df['datetime'] = pd.to_datetime(df[time_col], errors='coerce')
             df['load_supply'] = pd.to_numeric(df[load_supply_col], errors='coerce')
             df['load_sell'] = pd.to_numeric(df[load_sell_col], errors='coerce')
-            df = df.dropna(subset=['datetime'])  # 仅删除时间无效的行，负荷的 NaN 会在插值中处理
+            # 删除时间解析失败的行（这些行无法重采样）
+            df = df.dropna(subset=['datetime'])
         except Exception as e:
-            st.error(f"❌ 日期或数值格式解析失败: {e}")
+            st.error(f"❌ 数据转换失败: {e}")
             return
+
+        # 检查负荷列是否全为 NaN
+        if df['load_supply'].isna().all():
+            st.warning("⚠️ 供热负荷列全部为无效数值，请检查数据。")
+        if df['load_sell'].isna().all():
+            st.warning("⚠️ 销售负荷列全部为无效数值，请检查数据。")
         
         # ---- 调用补全函数，重采样为 5 分钟并插值 ----
         try:
