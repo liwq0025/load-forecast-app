@@ -64,7 +64,44 @@ def load_xgb_model(user,model_type):
     except Exception as e:
         st.error(f"❌ 模型加载失败: {e}")
         return None, None
-
+def fill_missing_minutes(df, time_col='datetime', value_col1='load_supply', value_col2='load_sell'):
+    """
+    将时间序列补全为连续的5分钟间隔数据，缺失值使用线性插值。
+    支持两列负荷同时补全。
+    """
+    # 1. 确保时间列是 datetime 类型
+    df[time_col] = pd.to_datetime(df[time_col])
+    
+    # 2. 删除重复时间（保留第一条）
+    df = df.drop_duplicates(subset=[time_col], keep='first')
+    
+    # 3. 按时间排序
+    df = df.sort_values(by=time_col)
+    
+    # 4. 设置为时间索引
+    df = df.set_index(time_col)
+    
+    # 5. 重采样为 5 分钟间隔
+    df_resampled = df.asfreq('5T')
+    
+    # 6. 对两列负荷进行线性插值（前后填充）
+    df_resampled[value_col1] = df_resampled[value_col1].interpolate(
+        method='linear', limit_direction='both'
+    )
+    df_resampled[value_col2] = df_resampled[value_col2].interpolate(
+        method='linear', limit_direction='both'
+    )
+    
+    # 7. 重置索引，恢复时间列
+    df_resampled = df_resampled.reset_index()
+    df_resampled.rename(columns={'index': time_col}, inplace=True)
+    
+    original_count = len(df)
+    filled_count = len(df_resampled)
+    missing_count = filled_count - original_count
+    st.info(f"✅ 数据补全完成: 原始 {original_count} 条 → 补全后 {filled_count} 条 (插值填充了 {missing_count} 个缺失点)")
+    
+    return df_resampled
 # -------------------- 数据重采样为5分钟 --------------------
 def resample_to_5min(df, time_col, value_col):
     """
@@ -532,32 +569,72 @@ def main():
     
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-        # 智能识别列名
-        time_col, load_col = None, None
+        # ---- 智能识别列名 ----
+        time_col = None
+        load_supply_col = None
+        load_sell_col = None
+        
         for col in df.columns:
+            # 时间列
             if '时间' in col or '日期' in col or 'datetime' in col.lower() or 'timestamp' in col.lower():
                 time_col = col
-            if '负荷' in col or '功率' in col or 'load' in col.lower() or 'value' in col.lower():
-                load_col = col
+            # 供热负荷列
+            if '供热' in col or '供' in col or 'supply' in col.lower():
+                load_supply_col = col
+            # 销售负荷列
+            if '销售' in col or '售' in col or 'sell' in col.lower():
+                load_sell_col = col
+        
+        # 如果未识别到，让用户手动选择（或使用默认第2、3列）
         if time_col is None:
             time_col = df.columns[0]
-        if load_col is None:
-            load_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
-        try:
-            df['datetime'] = pd.to_datetime(df[time_col])
-            df['load'] = df[load_col].astype(float)
-        except:
-            st.error("❌ 日期或数值格式解析失败，请检查数据。")
-            return
-        df = df.dropna(subset=['load'])
+        if load_supply_col is None:
+            # 尝试第二列
+            load_supply_col = df.columns[1] if len(df.columns) > 1 else None
+        if load_sell_col is None:
+            load_sell_col = df.columns[2] if len(df.columns) > 2 else None
         
-        # 重采样为5分钟
-        try:
-            df_5min = resample_to_5min(df, 'datetime', 'load')
-            st.success(f"✅ 数据已重采样为5分钟级，共 {len(df_5min)} 条记录")
-        except Exception as e:
-            st.error(f"❌ 重采样失败: {e}")
+        # 确保必要的列存在
+        if time_col is None or load_supply_col is None or load_sell_col is None:
+            st.error("❌ 未找到时间列或两列负荷列，请检查 CSV 格式（应包含：时间、供热负荷、销售负荷）")
             return
+        
+        try:
+            # 强制转换时间，并确保负荷为数值
+            df['datetime'] = pd.to_datetime(df[time_col])
+            df['load_supply'] = pd.to_numeric(df[load_supply_col], errors='coerce')
+            df['load_sell'] = pd.to_numeric(df[load_sell_col], errors='coerce')
+            df = df.dropna(subset=['datetime'])  # 仅删除时间无效的行，负荷的 NaN 会在插值中处理
+        except Exception as e:
+            st.error(f"❌ 日期或数值格式解析失败: {e}")
+            return
+        
+        # ---- 调用补全函数，重采样为 5 分钟并插值 ----
+        try:
+            df_filled = fill_missing_minutes(
+                df[['datetime', 'load_supply', 'load_sell']],
+                time_col='datetime',
+                value_col1='load_supply',
+                value_col2='load_sell'
+            )
+            st.success(f"✅ 数据已补全为5分钟间隔，共 {len(df_filled)} 条记录")
+        except Exception as e:
+            st.error(f"❌ 数据补全失败: {e}")
+            return
+        
+        # ---- 让用户选择使用哪个负荷进行预测 ----
+        load_choice = st.radio(
+            "选择预测目标负荷",
+            ("供热负荷 (t/h)", "销售负荷 (t/h)")
+        )
+        
+        if load_choice == "供热负荷 (t/h)":
+            df_filled['load'] = df_filled['load_supply']
+        else:
+            df_filled['load'] = df_filled['load_sell']
+        
+        # 之后将 df_filled 作为后续处理的 DataFrame（包含 datetime 和 load）
+        df_5min = df_filled[['datetime', 'load']].copy()
         
         # 数据概览
         st.subheader("📊 数据概览")
