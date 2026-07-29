@@ -498,13 +498,6 @@ def predict_future_24h_diff(model, df_5min, feature_names):
         load_pred = feat_dict['week_base'] + delta_pred
         future_loads.append(load_pred)
         history_loads.append(load_pred)
-        # 更新history_targets（使用预测的load来计算下一次的target？这里我们用真实值？但预测时只能用预测值，因此我们使用预测的load计算target）
-        # 但对于下一次预测，我们需要的是预测的delta，所以我们只需更新history_targets的最后一个值即可
-        # 但为了后续特征计算，我们需要用预测的load计算target
-        # 然而我们预测的是delta，所以我们把预测的delta加入history_targets
-        # 同时，history_loads中加入预测load
-        # 现在更新history_targets，以便下一次使用
-        # 注意：对于下一个时刻，lag_1_target等应该使用当前的delta
         history_targets.append(delta_pred)
     return future_times, future_loads
 
@@ -568,7 +561,7 @@ def main():
         # 历史曲线
         fig_hist, ax_hist = plt.subplots(figsize=(12, 3))
         ax_hist.plot(df_5min['datetime'], df_5min['load'], linewidth=0.8, color='#1E88E5')
-        ax_hist.set_title("历史负荷曲线（5分钟级）")
+        ax_hist.set_title("Historical Load Curve (5-Minute)")
         ax_hist.grid(True, alpha=0.3)
         ax_hist.xaxis.set_major_locator(mdates.DayLocator(interval=1))
         ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
@@ -592,10 +585,10 @@ def main():
                 col3.metric("RMSE", f"{backtest_result['rmse']:.3f}")
                 col4.metric("R²", f"{backtest_result['r2']:.4f}")
                 fig_back, ax_back = plt.subplots(figsize=(14, 4))
-                ax_back.plot(backtest_result['datetime'], backtest_result['true'], label='实际负荷', linewidth=2, color='#1E88E5')
-                ax_back.plot(backtest_result['datetime'], backtest_result['pred'], label='预测负荷', linewidth=2, linestyle='--', color='#FF6F00')
+                ax_back.plot(backtest_result['datetime'], backtest_result['true'], label='True load', linewidth=2, color='#1E88E5')
+                ax_back.plot(backtest_result['datetime'], backtest_result['pred'], label='Predicted load', linewidth=2, linestyle='--', color='#FF6F00')
                 ax_back.legend(fontsize=12)
-                ax_back.set_title(f"回测结果（最近 {test_steps} 个5分钟点）", fontsize=14)
+                ax_back.set_title(f"Backtesting Results (the most recent {test_steps} 5-minute data points)", fontsize=14)
                 ax_back.grid(True, alpha=0.3)
                 ax_back.xaxis.set_major_locator(mdates.HourLocator(interval=4))
                 ax_back.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
