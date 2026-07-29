@@ -82,7 +82,7 @@ def fill_missing_minutes(df, time_col='datetime', value_col1='load_supply', valu
     df = df.set_index(time_col)
     
     # 5. 重采样为 5 分钟间隔
-    df_resampled = df.asfreq('5T')
+    df_resampled = df.asfreq('5min')
     
     # 6. 对两列负荷进行线性插值（前后填充）
     df_resampled[value_col1] = df_resampled[value_col1].interpolate(
