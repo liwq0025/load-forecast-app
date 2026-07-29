@@ -364,8 +364,8 @@ def predict_future_24h_diff(model, df_5min, feature_names):
     滚动预测未来24小时（288个5分钟点），周偏差预测模型
     """
     hist_data = df_5min.copy().sort_values('datetime').reset_index(drop=True)
-    if len(hist_data) > 2000:
-        hist_data = hist_data.iloc[-2000:].reset_index(drop=True)
+    if len(hist_data) > 2500:
+        hist_data = hist_data.iloc[-2500:].reset_index(drop=True)
     history_loads = hist_data['load'].tolist()
     # 初始化history_targets
     history_targets = []
