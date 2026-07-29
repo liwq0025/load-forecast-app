@@ -627,6 +627,15 @@ def main():
         except Exception as e:
             st.error(f"❌ 数据转换失败: {e}")
             return
+        # ---- 4. 剔除供热负荷为0的异常行 ----
+        if 'load_supply' in df.columns:
+            zero_mask = (df['load_supply'] == 0)
+            zero_count = zero_mask.sum()
+            if zero_count > 0:
+                df = df[~zero_mask]
+                st.info(f"⚠️ 已删除 {zero_count} 条供热负荷为0的异常记录")
+            else:
+                st.success("✅ 未发现供热负荷为0的异常记录")
 
         # 检查负荷列是否全为 NaN
         if df['load_supply'].isna().all():
