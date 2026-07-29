@@ -565,10 +565,26 @@ def main():
         f"输入要求: 至少 7 天（2016个点）历史数据"
     )
     
-    uploaded_file = st.file_uploader("📂 点击上传或拖拽 CSV 文件（需包含「时间」和「负荷」列）", type=["csv"])
-    
+    # uploaded_file = st.file_uploader("📂 点击上传或拖拽 CSV 文件（需包含「时间」和「负荷」列）", type=["csv"])
+    uploaded_file = st.file_uploader(
+    "📂 点击上传或拖拽 CSV 或 Excel 文件（需包含「时间」、「供热负荷」、「销售负荷」列）",
+    type=["csv", "xlsx"]
+)
     if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
+        # ---- 根据文件扩展名读取 ----
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        try:
+            if file_extension == 'csv':
+                df = pd.read_csv(uploaded_file)
+            elif file_extension == 'xlsx':
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+            else:
+                st.error("❌ 不支持的文件格式，请上传 .csv 或 .xlsx 文件")
+                return
+        except Exception as e:
+            st.error(f"❌ 文件读取失败: {e}")
+            return
+        # df = pd.read_csv(uploaded_file)
         # ---- 智能识别列名 ----
         time_col = None
         load_supply_col = None
@@ -622,6 +638,7 @@ def main():
             st.error(f"❌ 数据补全失败: {e}")
             return
         
+        # ---- 让用户选择使用哪个负荷进行预测 ----
         df_filled['load'] = df_filled['load_supply']
         
         # 之后将 df_filled 作为后续处理的 DataFrame（包含 datetime 和 load）
