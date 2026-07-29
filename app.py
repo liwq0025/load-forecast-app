@@ -629,15 +629,15 @@ def main():
             fig_pred, ax_pred = plt.subplots(figsize=(14, 5))
             show_hist = min(288, len(df_5min))  # 展示最近24小时历史
             plot_hist_df = df_5min.iloc[-show_hist:]
-            ax_pred.plot(plot_hist_df['datetime'], plot_hist_df['load'], label='历史负荷', linewidth=2, color='#1E88E5')
+            ax_pred.plot(plot_hist_df['datetime'], plot_hist_df['load'], label='Historical Load', linewidth=2, color='#1E88E5')
             # 连接历史和预测
             connected_times = [plot_hist_df['datetime'].iloc[-1]] + future_times
             connected_loads = [plot_hist_df['load'].iloc[-1]] + future_loads
-            ax_pred.plot(connected_times, connected_loads, label='未来预测 (XGBoost)', linewidth=2.5, color='#FF6F00', marker='o', markersize=3)
+            ax_pred.plot(connected_times, connected_loads, label='Future Forecasts (XGBoost)', linewidth=2.5, color='#FF6F00', marker='o', markersize=3)
             last_time = df_5min['datetime'].iloc[-1]
-            ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, label='当前时刻（预测起点）')
+            ax_pred.axvline(x=last_time, color='red', linestyle='--', linewidth=1.5, label='Current Time (Prediction Start)')
             ax_pred.legend(fontsize=12)
-            ax_pred.set_title("未来24小时负荷走势预测（5分钟级）", fontsize=16)
+            ax_pred.set_title("Load Forecast for the Next 24 Hours (5-Minute)", fontsize=16)
             ax_pred.grid(True, alpha=0.3)
             ax_pred.xaxis.set_major_locator(mdates.HourLocator(interval=6))
             ax_pred.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
