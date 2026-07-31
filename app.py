@@ -756,7 +756,7 @@ def main():
             st.pyplot(fig_pred)
             
             with st.expander("📋 查看详细预测数据表格"):
-                result_df = pd.DataFrame({'预测时间': future_times, '预测负荷': future_loads})
+                result_df = pd.DataFrame({'Datetime': future_times, 'Predicted load': future_loads})
                 st.dataframe(result_df, use_container_width=True)
                 csv_buffer = io.StringIO()
                 result_df.to_csv(csv_buffer, index=False)
