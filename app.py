@@ -567,7 +567,7 @@ def main():
     
     # uploaded_file = st.file_uploader("📂 点击上传或拖拽 CSV 文件（需包含「时间」和「负荷」列）", type=["csv"])
     uploaded_file = st.file_uploader(
-    "📂 点击上传或拖拽 CSV 或 Excel 文件（需包含「时间」、「供热负荷」、「销售负荷」列）",
+    "📂 点击上传或拖拽 CSV 或 Excel 文件（需包含「时间」、「供热负荷」列）",
     type=["csv", "xlsx"]
 )
     if uploaded_file is not None:
